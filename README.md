@@ -9,8 +9,6 @@ Small compatibility plugin for Vigilant360 pages built with Oxygen.
 - Adds a `%vigilant_oxygen_excerpt%` Rank Math variable for templates.
 - Generates Focus Keywords from the post title when Rank Math has no keyword yet.
 - Saves Facebook/Twitter title and description meta from the generated SEO title/description.
-- Automatically adds missing image ALT metadata as `{page title} - {image filename}` when a post is saved.
-- Finds images referenced by WordPress content and Oxygen data, and never overwrites a non-empty ALT value.
 - Adds a Tools admin page for backing up current Rank Math meta by AJAX before bulk updating.
 - Adds AJAX restore by backup batch ID.
 - Adds AJAX delete for old backup batches.
@@ -30,7 +28,6 @@ The plugin does not change permalinks, slugs, canonical URLs, redirects, or any 
 4. Select the post types to update.
 5. Click `Run Bulk Update`.
 
-The bulk update also backfills missing ALT text for images referenced by the selected posts. Saving a post applies the same ALT rule automatically going forward.
 
 ## Restore flow
 

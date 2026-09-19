@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Vigilant Rank Math Oxygen Meta
  * Description: Generates Rank Math SEO meta from Oxygen builder content when default variables such as %excerpt% return empty values.
- * Version: 1.3.0
+ * Version: 1.3.2
  * Author: CI Web Studio
  * License: GPL-2.0-or-later
  */
@@ -36,7 +36,6 @@ final class Vigilant_Rank_Math_Oxygen_Meta {
 		add_action('rank_math/vars/register_extra_replacements', array(__CLASS__, 'register_rank_math_variables'));
 		add_action('admin_menu', array(__CLASS__, 'register_admin_page'));
 		add_action('admin_notices', array(__CLASS__, 'render_bulk_action_notice'));
-		add_action('save_post', array(__CLASS__, 'handle_save_post'), 20, 3);
 			add_action('wp_ajax_vrmom_create_backup', array(__CLASS__, 'handle_create_backup_ajax'));
 			add_action('wp_ajax_vrmom_restore_backup', array(__CLASS__, 'handle_restore_backup_ajax'));
 			add_action('wp_ajax_vrmom_delete_backup', array(__CLASS__, 'handle_delete_backup_ajax'));
@@ -58,19 +57,6 @@ final class Vigilant_Rank_Math_Oxygen_Meta {
 		}
 
 		return self::get_generated_description_for_post($post);
-	}
-
-	public static function handle_save_post(int $post_id, WP_Post $post, bool $update): void {
-		if (
-			wp_is_post_revision($post_id)
-			|| wp_is_post_autosave($post_id)
-			|| (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE)
-			|| in_array($post->post_status, array('auto-draft', 'inherit'), true)
-		) {
-			return;
-		}
-
-		self::add_missing_image_alt_text($post);
 	}
 
 	public static function filter_title($title): string {
@@ -533,15 +519,14 @@ final class Vigilant_Rank_Math_Oxygen_Meta {
 
 		$result = self::bulk_update_rank_math_meta($post_types, $update_title, $update_description, $update_focus_keyword, $update_social_meta, true, $overwrite_descriptions);
 		$message = sprintf(
-			'Backup %s confirmed. Checked %d records across %d post types. Updated %d titles, %d descriptions, %d focus keywords, %d social meta sets, and added ALT text to %d images.',
+			'Backup %s confirmed. Checked %d records across %d post types. Updated %d titles, %d descriptions, %d focus keywords, and %d social meta sets.',
 			$backup_batch,
 			$result['checked'],
 			count($post_types),
 			$result['titles'],
 			$result['descriptions'],
 			$result['focus_keywords'],
-			$result['social_meta'],
-			$result['image_alts']
+			$result['social_meta']
 		);
 
 		wp_safe_redirect(
@@ -589,7 +574,6 @@ final class Vigilant_Rank_Math_Oxygen_Meta {
 					'vrmom_descriptions' => $result['descriptions'],
 					'vrmom_focus_keywords' => $result['focus_keywords'],
 					'vrmom_social_meta' => $result['social_meta'],
-					'vrmom_image_alts' => $result['image_alts'],
 				),
 				$redirect_to
 		);
@@ -611,7 +595,6 @@ final class Vigilant_Rank_Math_Oxygen_Meta {
 		$descriptions = absint($_GET['vrmom_descriptions']);
 		$focus_keywords = isset($_GET['vrmom_focus_keywords']) ? absint($_GET['vrmom_focus_keywords']) : 0;
 		$social_meta = isset($_GET['vrmom_social_meta']) ? absint($_GET['vrmom_social_meta']) : 0;
-		$image_alts = isset($_GET['vrmom_image_alts']) ? absint($_GET['vrmom_image_alts']) : 0;
 		$backup = isset($_GET['vrmom_backup']) ? sanitize_text_field(wp_unslash($_GET['vrmom_backup'])) : '';
 		?>
 		<div class="notice notice-success is-dismissible">
@@ -619,14 +602,13 @@ final class Vigilant_Rank_Math_Oxygen_Meta {
 				<?php
 					echo esc_html(
 							sprintf(
-								'Vigilant SEO Bulk Update backup %s checked %d records. Updated %d titles, %d descriptions, %d focus keywords, %d social meta sets, and added ALT text to %d images.',
+								'Vigilant SEO Bulk Update backup %s checked %d records. Updated %d titles, %d descriptions, %d focus keywords, and %d social meta sets.',
 								$backup ?: 'auto',
 								$checked,
 								$titles,
 								$descriptions,
 								$focus_keywords,
-								$social_meta,
-								$image_alts
+								$social_meta
 							)
 						);
 				?>
@@ -968,7 +950,6 @@ final class Vigilant_Rank_Math_Oxygen_Meta {
 			'descriptions' => 0,
 			'focus_keywords' => 0,
 			'social_meta' => 0,
-			'image_alts' => 0,
 		);
 
 		foreach ($post_ids as $post_id) {
@@ -979,8 +960,6 @@ final class Vigilant_Rank_Math_Oxygen_Meta {
 			}
 
 			$result['checked']++;
-			$result['image_alts'] += self::add_missing_image_alt_text($post);
-
 			if ($update_title) {
 				$title = self::get_generated_title_for_post($post);
 				$current_title = (string) get_post_meta($post->ID, 'rank_math_title', true);
@@ -1072,92 +1051,6 @@ final class Vigilant_Rank_Math_Oxygen_Meta {
 		$cache[$post_id] = self::clean_text(get_the_title($post), self::DESCRIPTION_LENGTH);
 
 		return $cache[$post_id];
-	}
-
-	private static function add_missing_image_alt_text(WP_Post $post): int {
-		$attachment_ids = array();
-		self::collect_image_attachment_ids($post->post_content, $attachment_ids);
-		self::collect_image_attachment_ids(get_post_meta($post->ID, '_oxygen_data', true), $attachment_ids);
-
-		if (empty($attachment_ids)) {
-			return 0;
-		}
-
-		$page_title = self::clean_text((string) get_the_title($post), 160);
-		$updated = 0;
-
-		foreach (array_keys($attachment_ids) as $attachment_id) {
-			if (!wp_attachment_is_image($attachment_id) || trim((string) get_post_meta($attachment_id, '_wp_attachment_image_alt', true)) !== '') {
-				continue;
-			}
-
-			$file = get_attached_file($attachment_id);
-			$image_name = $file ? pathinfo($file, PATHINFO_FILENAME) : get_the_title($attachment_id);
-			$image_name = self::clean_text((string) $image_name, 160);
-
-			if ($page_title === '' || $image_name === '') {
-				continue;
-			}
-
-			update_post_meta($attachment_id, '_wp_attachment_image_alt', sprintf('%s - %s', $page_title, $image_name));
-			$updated++;
-		}
-
-		return $updated;
-	}
-
-	private static function collect_image_attachment_ids($value, array &$attachment_ids, string $key = ''): void {
-		if (is_array($value)) {
-			foreach ($value as $child_key => $child_value) {
-				self::collect_image_attachment_ids($child_value, $attachment_ids, strtolower((string) $child_key));
-			}
-
-			return;
-		}
-
-		if (!is_string($value) || trim($value) === '') {
-			if (is_numeric($value) && preg_match('/(?:attachment|image)[-_]?id$/', $key)) {
-				$attachment_ids[absint($value)] = true;
-			}
-
-			return;
-		}
-
-		if (preg_match_all('/wp-image-(\d+)/i', $value, $matches)) {
-			foreach ($matches[1] as $attachment_id) {
-				$attachment_ids[absint($attachment_id)] = true;
-			}
-		}
-
-		if (preg_match_all('/<(?:img|source)\b[^>]+(?:src|data-src)\s*=\s*["\']([^"\']+)["\']/i', $value, $matches)) {
-			foreach ($matches[1] as $image_url) {
-				$attachment_id = attachment_url_to_postid(html_entity_decode($image_url, ENT_QUOTES, 'UTF-8'));
-
-				if ($attachment_id) {
-					$attachment_ids[$attachment_id] = true;
-				}
-			}
-		}
-
-		if ($key === 'tree_json_string') {
-			$decoded = json_decode($value, true);
-
-			if (is_array($decoded)) {
-				self::collect_image_attachment_ids($decoded, $attachment_ids);
-			}
-		}
-
-		if (preg_match('/(?:attachment|image)[-_]?id$/', $key) && is_numeric($value)) {
-			$attachment_ids[absint($value)] = true;
-		}
-
-		if (in_array($key, array('src', 'url', 'image', 'image_url', 'source'), true) && preg_match('#^https?://#i', $value)) {
-			$attachment_id = attachment_url_to_postid($value);
-
-			if ($attachment_id) {
-				$attachment_ids[$attachment_id] = true;
-			}
-		}
 	}
 
 	private static function get_generated_title_for_post(WP_Post $post): string {
